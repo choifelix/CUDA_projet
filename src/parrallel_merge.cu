@@ -24,15 +24,16 @@ void affiche_tab(int * Tab, int len_tab)
 
 __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
 
-		__shared__ int s_M[lenA + lenB];
-        int i = threadIdx.x //+ blockIdx.x * 1024;
+		__shared__ int s_M[1024];
+        int i = threadIdx.x; //+ blockIdx.x * 1024;
 
-        int K[2], P[2];
+        int K[2];
+        int P[2];
      
         if (i > lenA){
 
         	K[0] = i - lenA;
-        	k[1] = lenA;
+        	K[1] = lenA;
 
         	P[0] = lenA;
         	P[1] = i - lenA; 	
@@ -40,7 +41,7 @@ __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
         else{
 
         	K[0] = 0;
-        	k[1] = i;
+        	K[1] = i;
 
         	P[0] = i;
         	P[1] = 0; 
@@ -92,11 +93,11 @@ int main(){
 	// int* A = (int*)malloc(lenA*sizeof(int));
 	// int* B = (int*)malloc(lenB*sizeof(int));
 	int A[lenA] = {1,2,5,6,6,9,11,15,16};
-	int b[lenB] = {4,7,8,10,12,13,14};
+	int B[lenB] = {4,7,8,10,12,13,14};
 	int* M   = (int*)malloc(lenM*sizeof(int));
 
 
-	float *dev_a, *dev_b, *dev_m;
+	int *dev_a, *dev_b, *dev_m;
 
 	HANDLE_ERROR( cudaMalloc( (void**)&dev_a, lenA * sizeof(int) ) );
 	HANDLE_ERROR( cudaMalloc( (void**)&dev_b, lenB * sizeof(int) ) );
@@ -131,6 +132,8 @@ int main(){
 	free(A);
 	free(B);
 	free(M);
+
+	return 0;
 
 
 
