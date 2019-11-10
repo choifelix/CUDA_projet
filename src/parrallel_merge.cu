@@ -23,9 +23,13 @@ void affiche_tab(int * Tab, int len_tab)
 
 
 __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
+        printf("entering thread %d\n",threadIdx.x );
+        printf("lenA: %d, lenB: %d\n",lenA,lenB );
+
 
 		__shared__ int s_M[1024];
         int i = threadIdx.x; //+ blockIdx.x * 1024;
+        int iter =0;
 
         int K[2];
         int P[2];
@@ -47,7 +51,11 @@ __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
         	P[1] = 0; 
         }
 
+        printf("thread %d : entering while\n",threadIdx.x);
+
         while (true) {
+            iter++;
+            printf("thread %d : iter %d\n",threadIdx.x, iter);
         	int offset = abs(K[1] - P[1])/2;
         	int Q[2];
 
@@ -61,11 +69,14 @@ __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
         			if(Q[1] < lenA && ( Q[0] == lenB || A[Q[1]] <= B[Q[0]] ) ){
         				
         				s_M[i] = A[Q[1]];
+                        //M[i] = A[Q[1]];
         			}
         			else{
 
         				s_M[i] = B[Q[0]];
+                        //M[i] = B[Q[0]];
         			}
+                    break;
         		}
         		else{
 
@@ -80,8 +91,11 @@ __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
 
         }
 
+        printf("thread %d : done\n",threadIdx.x );
+
         __syncthreads();
         M[i] = s_M[i];
+        printf("M[%d] = %d\n",i,M[i] );
 
 }
 
@@ -94,7 +108,9 @@ int main(){
 	// int* B = (int*)malloc(lenB*sizeof(int));
 	int A[lenA] = {1,2,5,6,6,9,11,15,16};
 	int B[lenB] = {4,7,8,10,12,13,14};
-	int* M   = (int*)malloc(lenM*sizeof(int));
+	int* M;
+    M = (int*)malloc(lenM*sizeof(int));
+    //int M[lenM]; 
 
 
 	int *dev_a, *dev_b, *dev_m;
@@ -116,12 +132,16 @@ int main(){
 	Timer timer = Timer();
 	timer.start();
 
+    printf("begining sorting\n");
 	merge_Small_k<<<1,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m);
+    printf("sorted\n");
 
 	timer.add();
 	gpu_time = timer.getsum();
 
+    printf("memcopy M\n");
 	HANDLE_ERROR( cudaMemcpy( M, dev_m, lenM * sizeof(int), cudaMemcpyDeviceToHost ) );
+    printf("memcopy M : done\n");
 
 	printf("gpu time: %f\n", gpu_time );
 	affiche_tab(M,lenM);
