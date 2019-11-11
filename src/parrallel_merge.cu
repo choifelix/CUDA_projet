@@ -19,6 +19,7 @@ void affiche_tab(int * Tab, int len_tab)
 	{
 		printf("%d\t",Tab[i]);
 	}
+    printf("\n");
 }
 
 
@@ -51,51 +52,60 @@ __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
         	P[1] = 0; 
         }
 
+        //bool loop = true;
+
         printf("thread %d : entering while\n",threadIdx.x);
 
-        while (true) {
-            iter++;
-            printf("thread %d : iter %d\n",threadIdx.x, iter);
-        	int offset = abs(K[1] - P[1])/2;
-        	int Q[2];
+        if(i < (lenA+lenB) ){
+            while (true) {
+                iter++;
+                
+            	int offset = abs(K[1] - P[1])/2;
+            	int Q[2];
 
-        	Q[0] = K[0] + offset;
-        	Q[1] = K[1] - offset;
+            	Q[0] = K[0] + offset;
+            	Q[1] = K[1] - offset;
 
-        	if(Q[1] >= 0 && Q[0] <= lenB && ( Q[1] == lenA  || Q[0] == 0 || A[Q[1]] <= B[Q[0]] ) ){
-        		
-        		if(Q[0] == lenB || Q[1] == 0 || A[Q[1]-1] <= B[Q[0]]){
-        			
-        			if(Q[1] < lenA && ( Q[0] == lenB || A[Q[1]] <= B[Q[0]] ) ){
-        				
-        				s_M[i] = A[Q[1]];
-                        //M[i] = A[Q[1]];
-        			}
-        			else{
+                printf("thread %d : iter %d -- %d - %d;%d\n",threadIdx.x, iter,offset,Q[0],Q[1]);
 
-        				s_M[i] = B[Q[0]];
-                        //M[i] = B[Q[0]];
-        			}
-                    break;
-        		}
-        		else{
+            	if(  (Q[1] >= 0) && (Q[0] <= lenB) && ( (Q[1] == lenA)  || (Q[0] == 0) || (A[Q[1]] > B[Q[0]-1]) ) ){
+                    //printf("hello\n");
+            		
+            		if( (Q[0] == lenB) || Q[1] == 0 || A[Q[1]-1] <= B[Q[0]]){
+                        printf("thread %d : iter %d should nreak soon\n",threadIdx.x, iter);
+            			
+            			if(Q[1] < lenA && ( Q[0] == lenB || A[Q[1]] <= B[Q[0]] ) ){
+            				
+            				s_M[i] = A[Q[1]];
+                            //M[i] = A[Q[1]];
+            			}
+            			else{
 
-        			K[0] = Q[0] + 1;
-        			K[1] = Q[1] - 1;
-        		}
-        	}
-        	else{
-        		P[0] = Q[0] - 1;
-        		P[1] = Q[1] + 1;
-        	}
+            				s_M[i] = B[Q[0]];
+                            //M[i] = B[Q[0]];
+            			}
+                        //loop = false;
+                        break;
+            		}
+            		else{
 
+            			K[0] = Q[0] + 1;
+            			K[1] = Q[1] - 1;
+            		}
+            	}
+            	else{
+            		P[0] = Q[0] - 1;
+            		P[1] = Q[1] + 1;
+            	}
+
+            }
         }
 
-        printf("thread %d : done\n",threadIdx.x );
+        //printf("thread %d : done\n",threadIdx.x );
 
         __syncthreads();
         M[i] = s_M[i];
-        printf("M[%d] = %d\n",i,M[i] );
+        //printf("M[%d] = %d\n",i,M[i] );
 
 }
 
@@ -108,9 +118,9 @@ int main(){
 	// int* B = (int*)malloc(lenB*sizeof(int));
 	int A[lenA] = {1,2,5,6,6,9,11,15,16};
 	int B[lenB] = {4,7,8,10,12,13,14};
-	int* M;
-    M = (int*)malloc(lenM*sizeof(int));
-    //int M[lenM]; 
+	//int* M;
+    //M = (int*)malloc(lenM*sizeof(int));
+    int M[lenM]; 
 
 
 	int *dev_a, *dev_b, *dev_m;
@@ -149,9 +159,9 @@ int main(){
 	cudaFree(dev_a);
 	cudaFree(dev_b);
 	cudaFree(dev_m);
-	free(A);
-	free(B);
-	free(M);
+	// free(A);
+	// free(B);
+	// free(M);
 
 	return 0;
 
