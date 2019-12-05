@@ -108,128 +108,176 @@ __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
         //printf("M[%d] = %d\n",i,M[i] );
 
 }
-
-
-__device__ void pathBig_k(int* A, int lenA, int* startA, int* B, int lenB, int* startB, int* M, int blockId){
-    
+__device__ void mergeBig_k(int *A, int startA,int lenA, int * B, int startB, int lenB, int * M, int startM){
     __shared__ int s_M[1024];
     int i = threadIdx.x; //+ blockIdx.x * 1024;
+    int blockId = blockIdx.x;
     int iter =0;
-    
+    int a_top,b_top,a_bottom,index,a_i,b_i;
+    index = i;// + startM;
+    lenA -= startA;
+    lenB -= startB;
+    A = &A[startA];
+    B = &B[startB];
 
-    int K[2];
-    int P[2];
- 
-    if (i > lenA){
+    if (index > lenA ){
 
-        K[0] = i - lenA;
-        K[1] = lenA;
-
-        P[0] = lenA;
-        P[1] = i - lenA;    
+        b_top = index - lenA; //k[0]
+        a_top = lenA;     //k[1]  
     }
     else{
-
-        K[0] = 0;
-        K[1] = i;
-
-        P[0] = i;
-        P[1] = 0; 
+        b_top =  0;        //k[0]
+        a_top = index;    //k[1]
     }
 
-    if(i < (lenA+lenB) ){
+    a_bottom = b_top;      //P[1]
+
+    // if( i == 5)
+    //     printf("block:%d thread:%d : a_top:%d a_bottom:%d b_top:%d\n",blockId,i,a_top,a_bottom,b_top);
+
+
+
+    // printf("thread %d : entering while\n",threadIdx.x);
+
+    if( i < (lenA+lenB) ){
+         // if( i== 5 )
+         //    printf("blockId:%d thread:%d - entering while\n",blockId,i);
         while (true) {
             iter++;
-            
-            int offset = abs(K[1] - P[1])/2;
-            int Q[2];
 
-            Q[0] = K[0] + offset;
-            Q[1] = K[1] - offset;
+            int offset = abs(a_top - a_bottom)/2;
 
-            printf("thread %d : iter %d -- %d - %d;%d\n",threadIdx.x, iter,offset,Q[0],Q[1]);
+            a_i = a_top - offset;     //Q[0] = K[0] + offset;
+            b_i = b_top + offset;     //Q[1] = K[1] - offset;
+            // if(i == 5)
+            //     printf("thread %d : iter %d -- %d - %d;%d\n",threadIdx.x, iter,offset,a_i,b_i);
 
-            if(  (Q[1] >= 0) && (Q[0] <= lenB) && ( (Q[1] == lenA)  || (Q[0] == 0) || (A[Q[1]] > B[Q[0]-1]) ) ){
-                //printf("hello\n");
-                
-                if( (Q[0] == lenB) || Q[1] == 0 || A[Q[1]-1] <= B[Q[0]]){
-                    printf("thread %d : iter %d should nreak soon\n",threadIdx.x, iter);
-                    
-                    if(Q[1] < lenA && ( Q[0] == lenB || A[Q[1]] <= B[Q[0]] ) ){
-                        
-                        s_M[i] = A[Q[1]];
-                        //M[i] = A[Q[1]];
+            if(  (a_i >= 0) && (b_i <= lenB) && ( (a_i == lenA)  || (b_i == 0) || (A[a_i] > B[b_i-1]) ) ){
+                // if(i == 5)
+                //     printf("hello\n");
+
+                if( (b_i == lenB) || a_i == 0 || A[a_i-1] <= B[b_i]){
+                    // if(i == 5)
+                    //     printf("thread %d : iter %d should nreak soon\n",threadIdx.x, iter);
+
+                    if(a_i < lenA && ( b_i == lenB || A[a_i] <= B[b_i] ) ){
+
+                        s_M[i] = A[a_i];
+                        //M[i] = A[b_i];
                     }
                     else{
 
-                        s_M[i] = B[Q[0]];
-                        //M[i] = B[Q[0]];
+                        s_M[i] = B[b_i];
+                        //M[i] = B[a_i];
                     }
                     //loop = false;
                     break;
                 }
                 else{
-
-                    K[0] = Q[0] + 1;
-                    K[1] = Q[1] - 1;
+                    a_top = a_i - 1;     // K[1] = b_i - 1;
+                    b_top = b_i + 1;     // K[0] = a_i + 1;
                 }
             }
             else{
-                P[0] = Q[0] - 1;
-                P[1] = Q[1] + 1;
+                a_bottom = a_i +1;      //P[1] = b_i + 1;
             }
-
-            if( i == lenA+lenB -1 ){
-            *startA = Q[1] + 1;
-            *startB = Q[0] + 1;
-
         }
-        }
+        // if( i == 5 )
+        // printf("thread:%d - getting out of while\n",i);
+    
 
+    //printf("thread %d : done\n",threadIdx.x );
+
+    __syncthreads();
+    M[startM + i] = s_M[i];
+    //printf("M[%d] = %d\n",i,M[i] );
+    
+
+    }
+    // if( i == 5)
+    //     printf("blockId:%d thread:%d - finish\n",blockId,i);
+}
+
+
+__global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbblock){
+    int threadId = threadIdx.x;
+    int blockId  = blockIdx.x;
+    int i        = blockIdx.x;
+    int a_top,b_top,a_bottom,index,a_i,b_i;
+  
+    int A_start[1024]; // startA pour chaque block
+    int B_start[1024]; // startB pour chaque block
+  
+    A_start[blockId] = lenA;
+    B_start[blockId] = lenB;
         
+    //for(int i=0 ; i<nbblock ;i++){
+    if( threadId == 0 and blockId==0)
+        printf("block number %d \n",i);
+    index = i * 1024; //indice de l'ement de M par rapport au nlock (initialisation)
+
+    if (index > lenA){
+
+        b_top = index - lenA; //k[0]
+        a_top = lenA;     //k[1]  
+    }
+    else{
+
+        b_top = 0;        //k[0]
+        a_top = index;    //k[1]
     }
 
-    
+    a_bottom = b_top;      //P[1]
+
+    //binary search on diag intersections
+    // if( threadId == 0 )
+    //     printf("block:%d - entering while\n",i);
+    while(true){
+
+        int offset = abs(a_top - a_bottom)/2;
+
+        a_i = a_top - offset;     //Q[0] = K[0] + offset;
+        b_i = b_top + offset;     //Q[1] = K[1] - offset;
+
+         if(  (a_i >= 0) && (b_i <= lenB) && ( (a_i == lenA)  || (b_i == 0) || (A[a_i] > B[b_i-1]) ) ){
+            //printf("hello\n");
+
+            if( (b_i == lenB) || a_i == 0 || A[a_i-1] <= B[b_i]){
+                A_start[i] = a_i;
+                B_start[i] = b_i;
+                break;
+            }
+            else{
+                a_top = a_i - 1;     // K[1] = b_i - 1;
+                b_top = b_i + 1;     // K[0] = a_i + 1;
+            }
+        }
+        else{
+            a_bottom = a_i +1;      //P[1] = b_i + 1;
+        }
+    }
+    // if( threadId == 0 )
+    //     printf("block:%d - getting out of while\n",i);
 
 
     __syncthreads();
-    M[i + blockId*1024] = s_M[i];
-}
+    if( threadId == 0 )
+        printf("block:%d - evverything is fine till now - %d,%d\n",i,A_start[i],B_start[i]);
+    
 
-
-
-__global__ void mergeBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbBlock){
-    //int threadId = threadIdx.x;
-    //int blockId  = blockIdx.x;
-    int startA = 0;
-    int startB = 0;
-    int mem_startA = startA;
-    int mem_startB = startB;
-    int local_lenA = lenA;
-    int local_lenB = lenB;
-
-    for (int i=0 ; i<nbBlock ; i++){
-        printf("------------%d iterration---------",i);
-        pathBig_k(A,local_lenA, &startA, B, local_lenB, &startB, M, i);
-
-        //modifie la longueur des listes A et B
-        local_lenA -= startA - mem_startA;
-        local_lenB -= startB - mem_startB;
-
-        //memorisation deu depart pour l'iteration suivante
-        mem_startA = startA;
-        mem_startB = startB;
-    }
-
+    mergeBig_k(A,A_start[i],lenA,B,B_start[i],lenB,M,i*1024);
     
 }
+
+
+
 
 
 
 
 int main(){
-	int lenA = 1024;
-	int lenB = 1024;
+	int lenA = 10000;
+	int lenB = 11245;
 	int lenM = lenA + lenB;
 
 	// int* A = (int*)malloc(lenA*sizeof(int));
@@ -238,9 +286,13 @@ int main(){
 	// int B[lenB] = {4,7,8,10,12,13,14};
     int A[lenA];
     int B[lenB];
+    srand (time (NULL));
 
-    for (int i=0 ; i <1024 ;i++){
+    for (int i=0 ; i <10000 ;i++){
         A[i] = 2*i;
+    }
+
+    for (int i=0 ; i <11245 ;i++){
         B[i] = 2*i +1;
     }
 	//int* M;
@@ -270,7 +322,7 @@ int main(){
     printf("begining sorting\n");
     int nbBlock = lenM/1024 + 1;
 	// merge_Small_k<<<1,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m);
-    mergeBig_k<<<nbBlock,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m, nbBlock);
+    pathBig_k<<<nbBlock,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m, nbBlock);
     printf("sorted\n");
 
 	timer.add();
