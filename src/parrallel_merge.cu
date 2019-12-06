@@ -39,6 +39,21 @@ void affiche_tab(int * Tab, int len_tab)
 }
 
 
+void affiche_Batchtab(int * Tab, int N, int d)
+{
+    for(int i=0; i < N; i++)
+    {
+        printf("%d {",i);
+        for(int j=0 ; j<d ; j++){
+            printf("%d\t",Tab[i*d +j]);
+        }
+        printf("}\n");
+    }
+    printf("\n");
+}
+
+
+
 __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
         printf("entering thread %d\n",threadIdx.x );
         printf("lenA: %d, lenB: %d\n",lenA,lenB );
@@ -303,51 +318,106 @@ __global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbbloc
 
 /###########################################################################*/
 
-__global__ void mergeSmallBatch_k(int **list_A, int* list_lenA, int**list_B, int *list_lenB, int**list_M, int d, int N){
-    int tidx = threadIdx.x%d; //thread ne traite pas les elements de M_i d'indice sup a d (n'existe pas)
-    // int BlockId =  blockIdx.x;
-    int Qt = (threadIdx.x - tidx)/d; //nombre M_i callable dans un bloc
-    int gbx = Qt + blockIdx.x*(blockDim.x/d); // indice i du M_i sur M 
+__global__ void mergeSmallBatch_k(int *list_A, int* list_lenA, int*list_B, int *list_lenB, int*list_M, int d, int N){
+    int tidx    = threadIdx.x%d; //thread ne traite pas les elements de M_i d'indice sup a d (n'existe pas)
+    int BlockId = blockIdx.x;
+    int Qt      = (threadIdx.x - tidx)/d; //nombre M_i callable dans un bloc
+    int gbx     = Qt + blockIdx.x*(blockDim.x/d); // indice i du M_i sur M 
+
+
+    //calcul du nombre de partition traite par block
+    int nbPartPerBlock;
+    if(1024/d < N){
+        nbPartPerBlock = 1024/d;
+    }
+    else{
+        nbPartPerBlock = N;
+    }
     
-    int* A = list_A[gbx];
-    int* B = list_B[gbx];
+    //calcul nombre block utilise
+    int nbblock = (N +nbPartPerBlock-1) / nbPartPerBlock;
+    
+    //calcul du nombre de thread utilise par un block
+    int threadMax;
+    if(BlockId == nbblock -1){
+        threadMax = (N - (nbPartPerBlock*BlockId) ) *d;
+    }
+    else{
+        if(1024/d < N){
+            threadMax = d * (1024/d);
+        }
+        else{
+            threadMax =  N*d;
+        }
+    }
+
+
+  
+
+    // printf("block: %d - thread:%d -blockMax=%d - threadMax=%d \n",BlockId, threadIdx.x,nbblock,threadMax );
+
+
+    int startA = 0;
+    int startB = 0;
+
+    for(int j=0 ; j<gbx ; j++){
+        startA += list_lenA[j];
+        startB += list_lenB[j];
+    }
+    
+    int* A = &list_A[startA];
+    int* B = &list_B[startB];
     int lenA = list_lenA[gbx];
     int lenB = list_lenB[gbx];
   
-      
-    printf("entering thread %d\n",threadIdx.x );
-    printf("lenA: %d, lenB: %d\n",lenA,lenB );
-
+    
 
     __shared__ int s_M[1024];
     int i = threadIdx.x; //+ blockIdx.x * 1024;
     int iter =0;
+
+    if (i == 0 && BlockId == 0){
+        printf("entering thread %d\n",threadIdx.x );
+        printf("lenA: %d, lenB: %d\n",lenA,lenB );
+        printf("startA: %d, startB: %d\n",startA,startB );
+        printf("A[startA]: %d, B[startB]: %d\n",A[0],B[0] );
+    }  
+    
+
+    // if(BlockId == nbblock -1 ){
+    //     printf("block:%d threadMax on last block=%d\n",BlockId,threadMax);
+    // }
+
 
     int K[2];
     int P[2];
 
     if (i > lenA){
 
-        K[0] = i - lenA;
+        K[0] = tidx - lenA;
         K[1] = lenA;
 
         P[0] = lenA;
-        P[1] = i - lenA;    
+        P[1] = tidx - lenA;    
     }
     else{
 
         K[0] = 0;
-        K[1] = i;
+        K[1] = tidx;
 
-        P[0] = i;
+        P[0] = tidx;
         P[1] = 0; 
     }
 
     //bool loop = true;
 
-    printf("thread %d : entering while\n",threadIdx.x);
+    // printf("thread %d : entering while\n",threadIdx.x);
 
-    if(i < (Qt +1)*d  ){
+    if( (BlockId < nbblock) and (i < threadMax) ){
+        // if (i == 21 && BlockId == 0){
+        //     printf("block: %d thread %d : iter %d entering algorithm\n", BlockId,threadIdx.x, iter);
+
+        // } 
         while (true) {
             iter++;
 
@@ -357,13 +427,15 @@ __global__ void mergeSmallBatch_k(int **list_A, int* list_lenA, int**list_B, int
             Q[0] = K[0] + offset;
             Q[1] = K[1] - offset;
 
-            printf("thread %d : iter %d -- %d - %d;%d\n",threadIdx.x, iter,offset,Q[0],Q[1]);
+            // printf("thread %d : iter %d -- %d - %d;%d\n",threadIdx.x, iter,offset,Q[0],Q[1]);
 
             if(  (Q[1] >= 0) && (Q[0] <= lenB) && ( (Q[1] == lenA)  || (Q[0] == 0) || (A[Q[1]] > B[Q[0]-1]) ) ){
                 //printf("hello\n");
 
                 if( (Q[0] == lenB) || Q[1] == 0 || A[Q[1]-1] <= B[Q[0]]){
-                    printf("thread %d : iter %d should nreak soon\n",threadIdx.x, iter);
+                    // if (i == 0 && BlockId == 0){
+                    //     printf("block: %d thread %d : iter %d should break soon\n", BlockId,threadIdx.x, iter);
+                    // } 
 
                     if(Q[1] < lenA && ( Q[0] == lenB || A[Q[1]] <= B[Q[0]] ) ){
 
@@ -375,6 +447,7 @@ __global__ void mergeSmallBatch_k(int **list_A, int* list_lenA, int**list_B, int
                         s_M[i] = B[Q[0]];
                         //M[i] = B[Q[0]];
                     }
+                    // printf("block: %d M[%d] = %d\n",BlockId,i,s_M[i]);
                     //loop = false;
                     break;
                 }
@@ -390,18 +463,41 @@ __global__ void mergeSmallBatch_k(int **list_A, int* list_lenA, int**list_B, int
             }
 
         }
-    }
+    
 
     //printf("thread %d : done\n",threadIdx.x );
 
     __syncthreads();
-    list_M[gbx][tidx] = s_M[i];
+    list_M[gbx*d + tidx] = s_M[i];
     //printf("M[%d] = %d\n",i,M[i] );
+    }
 }
 
 
 
-void tets_batchMerge(int d,int N){  
+
+
+
+/*##########################################################################
+                        Tests functions
+
+/###########################################################################*/
+
+
+void convert2D_to1D_array(int **A, int*lenA, int N, int *A_1d){
+
+    int index = 0;
+    for(int i=0 ; i<N ; i++){
+        for(int j=0 ; j<lenA[i] ; j++){
+            A_1d[index] = A[i][j];
+            index ++;
+        }
+    }
+
+}
+
+
+void test_batchMerge(int d,int N){  
     printf("----------------------------------------\n");
     printf("------ begining Batch merge sort -------\n");
     printf("----------------------------------------\n");
@@ -411,44 +507,54 @@ void tets_batchMerge(int d,int N){
     
     int lenA[N];
     int lenB[N];
-    int M[N][d];
-  
+    int M[N*d];
+    
+    int sizeA = 0;
+    int sizeB = 0;
     for (int i=0 ;i<N ; i++){
-        A[i] = (int*)malloc( (d/2) *sizeof(int));
-        B[i] = (int*)malloc( (d/2) *sizeof(int));
-        for(int j=0 ; j<d/2 ; j++){
-            A[i][j] = j*2;
+        A[i] = (int*)malloc( (d/2 -1) *sizeof(int));
+        B[i] = (int*)malloc( (d/2 +1) *sizeof(int));
+        for(int j=0 ; j<d/2 +1 ; j++){
+            if(j < d/2 - 1){
+                A[i][j] = j*2;
+                sizeA++;
+            }
             B[i][j] = j*2 + 1;
+            
+            sizeB++;
+
         }
-        lenA[i] = d/2;
-        lenB[i] = d/2;
+        lenA[i] = d/2 - 1;
+        lenB[i] = d/2 + 1;
     }
 
     printf("CPU variable allocated and initialized\n");
+
+    int A_1d[sizeA];
+    convert2D_to1D_array(A,lenA,N, A_1d);
+    int B_1d[sizeB];
+    convert2D_to1D_array(B,lenB,N, B_1d);
   
   
   
 
-    int **dev_a, **dev_b, **dev_m;
+    int *dev_a, *dev_b, *dev_m;
     int * dev_lenA, *dev_lenB; 
 
-    HANDLE_ERROR( cudaMalloc( (void**)&dev_a, N * sizeof(int*) ) );
-    HANDLE_ERROR( cudaMalloc( (void**)&dev_b, N * sizeof(int*) ) );
-    HANDLE_ERROR( cudaMalloc( (void**)&dev_m, N * sizeof(int*) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_a, sizeA * sizeof(int) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_b, sizeB * sizeof(int) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_m,   N*d * sizeof(int) ) );
 
-    for (int i=0 ; i<N ; i++){
-        printf("%d\n",i);
-        HANDLE_ERROR( cudaMalloc( (void**)&dev_a[i], lenA[i] * sizeof(int) ) );
-        HANDLE_ERROR( cudaMalloc( (void**)&dev_b[i], lenB[i] * sizeof(int) ) );
-        HANDLE_ERROR( cudaMalloc( (void**)&dev_m[i],       d * sizeof(int) ) );
-        
-        printf("%d - allocated\n",i);
-        HANDLE_ERROR( cudaMemcpy( dev_a[i], A[i], lenA[i] * sizeof(int), cudaMemcpyHostToDevice ) );
-        HANDLE_ERROR( cudaMemcpy( dev_b[i], B[i], lenB[i] * sizeof(int), cudaMemcpyHostToDevice ) );
-    }
+    HANDLE_ERROR( cudaMemcpy( dev_a, A_1d, sizeA * sizeof(int), cudaMemcpyHostToDevice ) );
+    HANDLE_ERROR( cudaMemcpy( dev_b, B_1d, sizeB * sizeof(int), cudaMemcpyHostToDevice ) );
+
   
+
     HANDLE_ERROR( cudaMalloc( (void**)&dev_lenA, N * sizeof(int) ) );
     HANDLE_ERROR( cudaMalloc( (void**)&dev_lenB, N * sizeof(int) ) );
+
+    HANDLE_ERROR( cudaMemcpy( dev_lenA, lenA, N * sizeof(int), cudaMemcpyHostToDevice ) );
+    HANDLE_ERROR( cudaMemcpy( dev_lenB, lenB, N * sizeof(int), cudaMemcpyHostToDevice ) );
 
 
     printf("GPU variable allocated and initialized\n");
@@ -457,7 +563,10 @@ void tets_batchMerge(int d,int N){
    
 
     int threadsPerBlock = d * (1024/d);
+    // int nbBlock = N / (1024/d) + 1;
     int nbBlock = 1000;
+
+    printf("%d / %d = %d\n",N,1024/d,nbBlock);
 
     //float cpu_time;
     float gpu_time;
@@ -467,7 +576,6 @@ void tets_batchMerge(int d,int N){
 
     printf("begining sorting\n");
     
-    // merge_Small_k<<<1,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m);
     mergeSmallBatch_k<<<nbBlock,threadsPerBlock>>>(dev_a, dev_lenA, dev_b, dev_lenB, dev_m, d, N);
     printf("sorted\n");
 
@@ -475,26 +583,20 @@ void tets_batchMerge(int d,int N){
     gpu_time = timer.getsum();
 
     printf("memcopy M\n");
-    for(int i=0 ; i<N ; i++){
-        HANDLE_ERROR( cudaMemcpy( M[i], dev_m[i], d * sizeof(int), cudaMemcpyDeviceToHost ) );
-    }
+    HANDLE_ERROR( cudaMemcpy( M, dev_m, N*d * sizeof(int), cudaMemcpyDeviceToHost ) );
     
     printf("memcopy M : done\n");
 
     printf("gpu time: %f\n", gpu_time );
     
-    for(int i=0 ; i<N ; i++){
-        affiche_tab(M[i],d);
-    }
+    affiche_Batchtab(M,N,d);
     
-    for (int i=0 ; i<N ; i++){
-        cudaFree(dev_a[i]);
-        cudaFree(dev_b[i]);
-        cudaFree(dev_m[i]);
-    }
+    
+   
     cudaFree(dev_a);
     cudaFree(dev_b);
     cudaFree(dev_m);
+
     cudaFree(dev_lenA);
     cudaFree(dev_lenB);
   
@@ -505,7 +607,7 @@ void tets_batchMerge(int d,int N){
     }
 
 
-}
+};
 
 
 
@@ -577,7 +679,7 @@ void test_PathMerge(){
     // free(B);
     // free(M);
 
-}
+};
 
 
 
@@ -588,7 +690,7 @@ void test_PathMerge(){
 
 
 int main(){
-	tets_batchMerge(2,10);
+	test_batchMerge(1024,10);
 
     return 0;
 }
