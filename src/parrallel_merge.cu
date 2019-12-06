@@ -1,3 +1,19 @@
+//  created on Thu 7 - 11 - 2019
+// 
+//              by 
+//  Felix CHOI and Assef BOINA
+// 
+//          Supersived by
+//Roman Iakymchuk - Lokmane ABBAS TURKI
+//
+//          Work based on 
+//  GPU Merge Path - A GPU Merging Algorithm 
+//              by
+//  O.Green, R. McColl and D.A. Bader
+// 
+//  Sorbonne University - Polytech Sorbonne
+// 
+// all right reserved
 #include <stdio.h>
 #include <stdlib.h>
 #include "timer.h"
@@ -108,6 +124,17 @@ __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
         //printf("M[%d] = %d\n",i,M[i] );
 
 }
+
+
+
+
+
+
+/*##########################################################################
+                        Merge Path on any size
+                            using 2 kernels
+/###########################################################################*/
+
 __device__ void mergeBig_k(int *A, int startA,int lenA, int * B, int startB, int lenB, int * M, int startM){
     __shared__ int s_M[1024];
     int i = threadIdx.x; //+ blockIdx.x * 1024;
@@ -271,19 +298,227 @@ __global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbbloc
 
 
 
+/*##########################################################################
+                        Batch Merge on size d on N Batch
+
+/###########################################################################*/
+
+__global__ void mergeSmallBatch_k(int **list_A, int* list_lenA, int**list_B, int *list_lenB, int**list_M, int d, int N){
+    int tidx = threadIdx.x%d; //thread ne traite pas les elements de M_i d'indice sup a d (n'existe pas)
+    // int BlockId =  blockIdx.x;
+    int Qt = (threadIdx.x - tidx)/d; //nombre M_i callable dans un bloc
+    int gbx = Qt + blockIdx.x*(blockDim.x/d); // indice i du M_i sur M 
+    
+    int* A = list_A[gbx];
+    int* B = list_B[gbx];
+    int lenA = list_lenA[gbx];
+    int lenB = list_lenB[gbx];
+  
+      
+    printf("entering thread %d\n",threadIdx.x );
+    printf("lenA: %d, lenB: %d\n",lenA,lenB );
+
+
+    __shared__ int s_M[1024];
+    int i = threadIdx.x; //+ blockIdx.x * 1024;
+    int iter =0;
+
+    int K[2];
+    int P[2];
+
+    if (i > lenA){
+
+        K[0] = i - lenA;
+        K[1] = lenA;
+
+        P[0] = lenA;
+        P[1] = i - lenA;    
+    }
+    else{
+
+        K[0] = 0;
+        K[1] = i;
+
+        P[0] = i;
+        P[1] = 0; 
+    }
+
+    //bool loop = true;
+
+    printf("thread %d : entering while\n",threadIdx.x);
+
+    if(i < (Qt +1)*d  ){
+        while (true) {
+            iter++;
+
+            int offset = abs(K[1] - P[1])/2;
+            int Q[2];
+
+            Q[0] = K[0] + offset;
+            Q[1] = K[1] - offset;
+
+            printf("thread %d : iter %d -- %d - %d;%d\n",threadIdx.x, iter,offset,Q[0],Q[1]);
+
+            if(  (Q[1] >= 0) && (Q[0] <= lenB) && ( (Q[1] == lenA)  || (Q[0] == 0) || (A[Q[1]] > B[Q[0]-1]) ) ){
+                //printf("hello\n");
+
+                if( (Q[0] == lenB) || Q[1] == 0 || A[Q[1]-1] <= B[Q[0]]){
+                    printf("thread %d : iter %d should nreak soon\n",threadIdx.x, iter);
+
+                    if(Q[1] < lenA && ( Q[0] == lenB || A[Q[1]] <= B[Q[0]] ) ){
+
+                        s_M[i] = A[Q[1]];
+                        //M[i] = A[Q[1]];
+                    }
+                    else{
+
+                        s_M[i] = B[Q[0]];
+                        //M[i] = B[Q[0]];
+                    }
+                    //loop = false;
+                    break;
+                }
+                else{
+
+                    K[0] = Q[0] + 1;
+                    K[1] = Q[1] - 1;
+                }
+            }
+            else{
+                P[0] = Q[0] - 1;
+                P[1] = Q[1] + 1;
+            }
+
+        }
+    }
+
+    //printf("thread %d : done\n",threadIdx.x );
+
+    __syncthreads();
+    list_M[gbx][tidx] = s_M[i];
+    //printf("M[%d] = %d\n",i,M[i] );
+}
+
+
+
+void tets_batchMerge(int d,int N){  
+    printf("----------------------------------------\n");
+    printf("------ begining Batch merge sort -------\n");
+    printf("----------------------------------------\n");
+
+    int *A[N];
+    int *B[N];
+    
+    int lenA[N];
+    int lenB[N];
+    int M[N][d];
+  
+    for (int i=0 ;i<N ; i++){
+        A[i] = (int*)malloc( (d/2) *sizeof(int));
+        B[i] = (int*)malloc( (d/2) *sizeof(int));
+        for(int j=0 ; j<d/2 ; j++){
+            A[i][j] = j*2;
+            B[i][j] = j*2 + 1;
+        }
+        lenA[i] = d/2;
+        lenB[i] = d/2;
+    }
+
+    printf("CPU variable allocated and initialized\n");
+  
+  
+  
+
+    int **dev_a, **dev_b, **dev_m;
+    int * dev_lenA, *dev_lenB; 
+
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_a, N * sizeof(int*) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_b, N * sizeof(int*) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_m, N * sizeof(int*) ) );
+
+    for (int i=0 ; i<N ; i++){
+        printf("%d\n",i);
+        HANDLE_ERROR( cudaMalloc( (void**)&dev_a[i], lenA[i] * sizeof(int) ) );
+        HANDLE_ERROR( cudaMalloc( (void**)&dev_b[i], lenB[i] * sizeof(int) ) );
+        HANDLE_ERROR( cudaMalloc( (void**)&dev_m[i],       d * sizeof(int) ) );
+        
+        printf("%d - allocated\n",i);
+        HANDLE_ERROR( cudaMemcpy( dev_a[i], A[i], lenA[i] * sizeof(int), cudaMemcpyHostToDevice ) );
+        HANDLE_ERROR( cudaMemcpy( dev_b[i], B[i], lenB[i] * sizeof(int), cudaMemcpyHostToDevice ) );
+    }
+  
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_lenA, N * sizeof(int) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_lenB, N * sizeof(int) ) );
+
+
+    printf("GPU variable allocated and initialized\n");
+
+    
+   
+
+    int threadsPerBlock = d * (1024/d);
+    int nbBlock = 1000;
+
+    //float cpu_time;
+    float gpu_time;
+
+    Timer timer = Timer();
+    timer.start();
+
+    printf("begining sorting\n");
+    
+    // merge_Small_k<<<1,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m);
+    mergeSmallBatch_k<<<nbBlock,threadsPerBlock>>>(dev_a, dev_lenA, dev_b, dev_lenB, dev_m, d, N);
+    printf("sorted\n");
+
+    timer.add();
+    gpu_time = timer.getsum();
+
+    printf("memcopy M\n");
+    for(int i=0 ; i<N ; i++){
+        HANDLE_ERROR( cudaMemcpy( M[i], dev_m[i], d * sizeof(int), cudaMemcpyDeviceToHost ) );
+    }
+    
+    printf("memcopy M : done\n");
+
+    printf("gpu time: %f\n", gpu_time );
+    
+    for(int i=0 ; i<N ; i++){
+        affiche_tab(M[i],d);
+    }
+    
+    for (int i=0 ; i<N ; i++){
+        cudaFree(dev_a[i]);
+        cudaFree(dev_b[i]);
+        cudaFree(dev_m[i]);
+    }
+    cudaFree(dev_a);
+    cudaFree(dev_b);
+    cudaFree(dev_m);
+    cudaFree(dev_lenA);
+    cudaFree(dev_lenB);
+  
+  
+    for(int i=0 ; i<N ; i++){
+        free(A[i]);
+        free(B[i]);
+    }
+
+
+}
 
 
 
 
-int main(){
-	int lenA = 10000;
-	int lenB = 11245;
-	int lenM = lenA + lenB;
+void test_PathMerge(){
+    int lenA = 10000;
+    int lenB = 11245;
+    int lenM = lenA + lenB;
 
-	// int* A = (int*)malloc(lenA*sizeof(int));
-	// int* B = (int*)malloc(lenB*sizeof(int));
-	// int A[lenA] = {1,2,5,6,6,9,11,15,16};
-	// int B[lenB] = {4,7,8,10,12,13,14};
+    // int* A = (int*)malloc(lenA*sizeof(int));
+    // int* B = (int*)malloc(lenB*sizeof(int));
+    // int A[lenA] = {1,2,5,6,6,9,11,15,16};
+    // int B[lenB] = {4,7,8,10,12,13,14};
     int A[lenA];
     int B[lenB];
     srand (time (NULL));
@@ -295,59 +530,67 @@ int main(){
     for (int i=0 ; i <11245 ;i++){
         B[i] = 2*i +1;
     }
-	//int* M;
+    //int* M;
     //M = (int*)malloc(lenM*sizeof(int));
     int M[lenM]; 
 
 
-	int *dev_a, *dev_b, *dev_m;
+    int *dev_a, *dev_b, *dev_m;
 
-	HANDLE_ERROR( cudaMalloc( (void**)&dev_a, lenA * sizeof(int) ) );
-	HANDLE_ERROR( cudaMalloc( (void**)&dev_b, lenB * sizeof(int) ) );
-	HANDLE_ERROR( cudaMalloc( (void**)&dev_m, lenM * sizeof(int) ) );
-
-
-	HANDLE_ERROR( cudaMemcpy( dev_a, A, lenA * sizeof(int), cudaMemcpyHostToDevice ) );
-	HANDLE_ERROR( cudaMemcpy( dev_b, B, lenB * sizeof(int), cudaMemcpyHostToDevice ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_a, lenA * sizeof(int) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_b, lenB * sizeof(int) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_m, lenM * sizeof(int) ) );
 
 
-	int blocksize = 1024;
+    HANDLE_ERROR( cudaMemcpy( dev_a, A, lenA * sizeof(int), cudaMemcpyHostToDevice ) );
+    HANDLE_ERROR( cudaMemcpy( dev_b, B, lenB * sizeof(int), cudaMemcpyHostToDevice ) );
 
-	//float cpu_time;
-	float gpu_time;
 
-	Timer timer = Timer();
-	timer.start();
+    int blocksize = 1024;
+
+    //float cpu_time;
+    float gpu_time;
+
+    Timer timer = Timer();
+    timer.start();
 
     printf("begining sorting\n");
     int nbBlock = lenM/1024 + 1;
-	// merge_Small_k<<<1,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m);
+    // merge_Small_k<<<1,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m);
     pathBig_k<<<nbBlock,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m, nbBlock);
     printf("sorted\n");
 
-	timer.add();
-	gpu_time = timer.getsum();
+    timer.add();
+    gpu_time = timer.getsum();
 
     printf("memcopy M\n");
-	HANDLE_ERROR( cudaMemcpy( M, dev_m, lenM * sizeof(int), cudaMemcpyDeviceToHost ) );
+    HANDLE_ERROR( cudaMemcpy( M, dev_m, lenM * sizeof(int), cudaMemcpyDeviceToHost ) );
     printf("memcopy M : done\n");
 
-	printf("gpu time: %f\n", gpu_time );
-	affiche_tab(M,lenM);
+    printf("gpu time: %f\n", gpu_time );
+    affiche_tab(M,lenM);
 
-	cudaFree(dev_a);
-	cudaFree(dev_b);
-	cudaFree(dev_m);
-	// free(A);
-	// free(B);
-	// free(M);
+    cudaFree(dev_a);
+    cudaFree(dev_b);
+    cudaFree(dev_m);
+    // free(A);
+    // free(B);
+    // free(M);
 
-	return 0;
-
-
+}
 
 
 
+
+/*##########################################################################
+                                    MAIN
+/###########################################################################*/
+
+
+int main(){
+	tets_batchMerge(2,10);
+
+    return 0;
 }
 
 
