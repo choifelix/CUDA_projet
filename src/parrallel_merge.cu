@@ -29,6 +29,23 @@ static void HandleError( cudaError_t err,
 }
 #define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
 
+
+
+int cudaMemoryTest()
+{
+    const unsigned int N = 1000000 * 4;
+    const unsigned int bytes = N * sizeof(int);
+    int *h_a = (int*)malloc(bytes);
+    int *d_a;
+    HANDLE_ERROR(cudaMalloc((int**)&d_a, bytes));
+
+    memset(h_a, 0, bytes);
+    HANDLE_ERROR(cudaMemcpy(d_a, h_a, bytes, cudaMemcpyHostToDevice));
+    HANDLE_ERROR(cudaMemcpy(h_a, d_a, bytes, cudaMemcpyDeviceToHost));
+
+    return 0;
+}
+
 void affiche_tab(int * Tab, int len_tab)
 {
 	for(int i=0; i < len_tab; i++)
@@ -55,8 +72,8 @@ void affiche_Batchtab(int * Tab, int N, int d)
 
 
 __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
-        printf("entering thread %d\n",threadIdx.x );
-        printf("lenA: %d, lenB: %d\n",lenA,lenB );
+        // printf("entering thread %d\n",threadIdx.x );
+        // printf("lenA: %d, lenB: %d\n",lenA,lenB );
 
 
 		__shared__ int s_M[1024];
@@ -85,7 +102,7 @@ __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
 
         //bool loop = true;
 
-        printf("thread %d : entering while\n",threadIdx.x);
+        // printf("thread %d : entering while\n",threadIdx.x);
 
         if(i < (lenA+lenB) ){
             while (true) {
@@ -97,13 +114,13 @@ __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
             	Q[0] = K[0] + offset;
             	Q[1] = K[1] - offset;
 
-                printf("thread %d : iter %d -- %d - %d;%d\n",threadIdx.x, iter,offset,Q[0],Q[1]);
+                // printf("thread %d : iter %d -- %d - %d;%d\n",threadIdx.x, iter,offset,Q[0],Q[1]);
 
             	if(  (Q[1] >= 0) && (Q[0] <= lenB) && ( (Q[1] == lenA)  || (Q[0] == 0) || (A[Q[1]] > B[Q[0]-1]) ) ){
                     //printf("hello\n");
             		
             		if( (Q[0] == lenB) || Q[1] == 0 || A[Q[1]-1] <= B[Q[0]]){
-                        printf("thread %d : iter %d should nreak soon\n",threadIdx.x, iter);
+                        // printf("thread %d : iter %d should nreak soon\n",threadIdx.x, iter);
             			
             			if(Q[1] < lenA && ( Q[0] == lenB || A[Q[1]] <= B[Q[0]] ) ){
             				
@@ -254,8 +271,8 @@ __global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbbloc
     B_start[blockId] = lenB;
         
     //for(int i=0 ; i<nbblock ;i++){
-    if( threadId == 0 and blockId==0)
-        printf("block number %d \n",i);
+    // if( threadId == 0 and blockId==0)
+    //     printf("block number %d \n",i);
     index = i * 1024; //indice de l'ement de M par rapport au nlock (initialisation)
 
     if (index > lenA){
@@ -303,8 +320,8 @@ __global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbbloc
 
 
     __syncthreads();
-    if( threadId == 0 )
-        printf("block:%d - evverything is fine till now - %d,%d\n",i,A_start[i],B_start[i]);
+    // if( threadId == 0 )
+    //     printf("block:%d - evverything is fine till now - %d,%d\n",i,A_start[i],B_start[i]);
     
 
     mergeBig_k(A,A_start[i],lenA,B,B_start[i],lenB,M,i*1024);
@@ -376,12 +393,12 @@ __global__ void mergeSmallBatch_k(int *list_A, int* list_lenA, int*list_B, int *
     int i = threadIdx.x; //+ blockIdx.x * 1024;
     int iter =0;
 
-    if (i == 0 && BlockId == 0){
-        printf("entering thread %d\n",threadIdx.x );
-        printf("lenA: %d, lenB: %d\n",lenA,lenB );
-        printf("startA: %d, startB: %d\n",startA,startB );
-        printf("A[startA]: %d, B[startB]: %d\n",A[0],B[0] );
-    }  
+    // if (i == 0 && BlockId == 0){
+    //     printf("entering thread %d\n",threadIdx.x );
+    //     printf("lenA: %d, lenB: %d\n",lenA,lenB );
+    //     printf("startA: %d, startB: %d\n",startA,startB );
+    //     printf("A[startA]: %d, B[startB]: %d\n",A[0],B[0] );
+    // }  
     
 
     // if(BlockId == nbblock -1 ){
@@ -483,6 +500,50 @@ __global__ void mergeSmallBatch_k(int *list_A, int* list_lenA, int*list_B, int *
 
 /###########################################################################*/
 
+void construct_input(int **A, int*lenA, int ** B, int *lenB, int d , int N)
+{
+    int i=0; // compteur de 0 à N-1
+
+    srand (time (NULL));
+    //tant que i n'est pas égal au nombre de partionnement N
+    while(i<N) 
+    {
+        
+        lenA[i]=rand()%(d -1) + 1 ;
+        lenB[i]= d-lenA[i];
+
+        A[i] = (int*)malloc( (lenA[i]) *sizeof(int));
+        B[i] = (int*)malloc( (lenB[i]) *sizeof(int));
+
+        for (int j=0;j<d;j++)
+            {
+                if (j< lenA[i])
+                    A[i][j] = j*2;
+                if (j < lenB[i])
+                    B[i][j] = j*2 + 1;
+            }
+      i++;
+    }
+
+
+}
+
+void affiche_list(int ** T, int * lenT,int N)
+{
+    int i,j;
+    for(i=0;i<N;i++)
+    {
+        printf("len de ma sous liste [%d] = %d  \n",i,lenT[i]);
+        printf("(\t");
+        for (j=0;j<lenT[i];j++)
+        {
+         printf("%d\t",T[i][j]);
+        }
+        printf(")\n");
+    }
+    printf("\n");
+}
+
 
 void convert2D_to1D_array(int **A, int*lenA, int N, int *A_1d){
 
@@ -497,20 +558,35 @@ void convert2D_to1D_array(int **A, int*lenA, int N, int *A_1d){
 }
 
 
-void test_batchMerge(int d,int N){  
+void test_batchMerge_deterministic(int d,int N){  
     printf("----------------------------------------\n");
     printf("------ begining Batch merge sort -------\n");
     printf("----------------------------------------\n");
 
-    int *A[N];
-    int *B[N];
-    
-    int lenA[N];
-    int lenB[N];
-    int M[N*d];
-    
+
+//---------initialisation des tableaux-----------------
+    int **A;
+    int **B;
+
+    int *lenA;
+    int *lenB;
+    int *M;
+
+
+    A =(int **)malloc( N *sizeof(int*));
+    B =(int **)malloc( N *sizeof(int*));
+
+
+    lenA =(int *)malloc( N *sizeof(int));
+    lenB =(int *)malloc( N *sizeof(int));
+    M =(int *)malloc( N*d *sizeof(int));
+
+
     int sizeA = 0;
     int sizeB = 0;
+
+
+//------------remplissage de A et B----------------
     for (int i=0 ;i<N ; i++){
         A[i] = (int*)malloc( (d/2 -1) *sizeof(int));
         B[i] = (int*)malloc( (d/2 +1) *sizeof(int));
@@ -528,15 +604,182 @@ void test_batchMerge(int d,int N){
         lenB[i] = d/2 + 1;
     }
 
+    
+
+//---------conversion des tableaux 2D em tableaux 1D-------
+    // int A_1d[sizeA];
+    int * A_1d;
+    A_1d = (int*)malloc(sizeA*sizeof(int));
+    convert2D_to1D_array(A,lenA,N, A_1d);
+    // int B_1d[sizeB];
+    int * B_1d;
+    B_1d = (int*)malloc(sizeB*sizeof(int));
+    convert2D_to1D_array(B,lenB,N, B_1d);
+
+    printf("CPU variable allocated and initialized\n");
+  
+  
+  
+//--------allocation des tableaux sur le device---------
+    int *dev_a, *dev_b, *dev_m;
+    int * dev_lenA, *dev_lenB; 
+
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_a, sizeA * sizeof(int) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_b, sizeB * sizeof(int) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_m,   N*d * sizeof(int) ) );
+
+    HANDLE_ERROR( cudaMemcpy( dev_a, A_1d, sizeA * sizeof(int), cudaMemcpyHostToDevice ) );
+    HANDLE_ERROR( cudaMemcpy( dev_b, B_1d, sizeB * sizeof(int), cudaMemcpyHostToDevice ) );
+
+  
+
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_lenA, N * sizeof(int) ) );
+    HANDLE_ERROR( cudaMalloc( (void**)&dev_lenB, N * sizeof(int) ) );
+
+    HANDLE_ERROR( cudaMemcpy( dev_lenA, lenA, N * sizeof(int), cudaMemcpyHostToDevice ) );
+    HANDLE_ERROR( cudaMemcpy( dev_lenB, lenB, N * sizeof(int), cudaMemcpyHostToDevice ) );
+
+
+    printf("GPU variable allocated and initialized\n");
+
+    
+   
+//--------calcul du nombre de threads et nombre de blocs------------
+    int threadsPerBlock = d * (1024/d);
+    int nbBlock = (N*d + threadsPerBlock-1) / threadsPerBlock;
+
+//------- calculs ---------
+    printf("N=%d , d=%d , threads= %d , blocs= %d\n",N,d,threadsPerBlock,nbBlock);
+
+    //float cpu_time;
+    float gpu_time;
+
+    Timer timer = Timer();
+    timer.start();
+
+    printf("begining sorting\n");
+    
+    mergeSmallBatch_k<<<nbBlock,threadsPerBlock>>>(dev_a, dev_lenA, dev_b, dev_lenB, dev_m, d, N);
+    cudaDeviceSynchronize();
+
+    timer.add();
+    gpu_time = timer.getsum();
+
+    HANDLE_ERROR( cudaMemcpy( M, dev_m, N*d * sizeof(int), cudaMemcpyDeviceToHost ) );
+    
+    printf("memcopy M : done\n");
+
+    affiche_Batchtab(M,N,d);
+
+    printf("gpu time: %f\n", gpu_time );
+    
+    
+    
+    
+//------- liberation memoire ---------------
+    cudaFree(dev_a);
+    cudaFree(dev_b);
+    cudaFree(dev_m);
+
+    cudaFree(dev_lenA);
+    cudaFree(dev_lenB);
+  
+  
+    for(int i=0 ; i<N ; i++){
+        free(A[i]);
+        free(B[i]);
+    }
+
+    free(A);
+    free(B);
+
+    free(lenA);
+    free(lenB);
+    free(M);
+
+    free(A_1d);
+    free(B_1d);
+};
+
+
+void test_batchMerge_rand(int d,int N){  
+    printf("----------------------------------------\n");
+    printf("------ begining Batch merge sort -------\n");
+    printf("----------------------------------------\n");
+
+
+//---------initialisation des tableaux-----------------]
+
+    // int *A[N];
+    // int *B[N];
+    
+    // int lenA[N];
+    // int lenB[N];
+    // int M[N*d];
+
+    int **A;
+    int **B;
+
+    int *lenA;
+    int *lenB;
+    int *M;
+
+
+    A =(int **)malloc( N *sizeof(int*));
+    B =(int **)malloc( N *sizeof(int*));
+
+
+    lenA =(int *)malloc( N *sizeof(int));
+    lenB =(int *)malloc( N *sizeof(int));
+    M =(int *)malloc( N*d *sizeof(int));
+
+
+
+//------------remplissage de A et B----------------
+
+    construct_input(A,lenA,B,lenB,d,N);
+    // printf("Ma liste A\n");
+    // affiche_list(A,lenA,N);
+    // printf("Ma liste B :\n");
+    // affiche_list(B,lenB,N);
+
+
+//---------calcul nombre total d'elements de A et B------------
+
+    int sizeA = 0;
+    int sizeB = 0;
+
+    for(int i=0 ; i<N ; i++){
+        sizeA += lenA[i];
+        sizeB += lenB[i];
+    }
+
+
+
+    
+
+//---------conversion des tableaux 2D em tableaux 1D-------
+    // int A_1d[sizeA];
+    int * A_1d;
+    A_1d = (int*)malloc(sizeA*sizeof(int));
+    convert2D_to1D_array(A,lenA,N, A_1d);
+    // int B_1d[sizeB];
+    int * B_1d;
+    B_1d = (int*)malloc(sizeB*sizeof(int));
+    convert2D_to1D_array(B,lenB,N, B_1d);
+
+
+
     printf("CPU variable allocated and initialized\n");
 
-    int A_1d[sizeA];
-    convert2D_to1D_array(A,lenA,N, A_1d);
-    int B_1d[sizeB];
-    convert2D_to1D_array(B,lenB,N, B_1d);
+    // float TimerAddOne;
+    // cudaEvent_t start, stop;
+    // cudaEventCreate(&start);
+    // cudaEventCreate(&stop);
   
   
   
+//--------allocation des tableaux sur le device---------
 
     int *dev_a, *dev_b, *dev_m;
     int * dev_lenA, *dev_lenB; 
@@ -561,13 +804,15 @@ void test_batchMerge(int d,int N){
 
     
    
+//--------calcul du nombre de threads et nombre de blocs------------
 
     int threadsPerBlock = d * (1024/d);
-    // int nbBlock = N / (1024/d) + 1;
-    int nbBlock = 1000;
+    int nbBlock = (N*d + threadsPerBlock-1) / threadsPerBlock;
 
-    printf("%d / %d = %d\n",N,1024/d,nbBlock);
+    printf("N=%d , d=%d , threads= %d , blocs= %d\n",N,d,threadsPerBlock,nbBlock);
 
+
+//------- calculs ---------
     //float cpu_time;
     float gpu_time;
 
@@ -575,24 +820,34 @@ void test_batchMerge(int d,int N){
     timer.start();
 
     printf("begining sorting\n");
+    // cudaEventRecord(start,0);
     
     mergeSmallBatch_k<<<nbBlock,threadsPerBlock>>>(dev_a, dev_lenA, dev_b, dev_lenB, dev_m, d, N);
-    printf("sorted\n");
+    cudaDeviceSynchronize();
 
     timer.add();
     gpu_time = timer.getsum();
 
-    printf("memcopy M\n");
+    // cudaEventRecord(stop,0);
+    // cudaEventSynchronize(stop);
+    // cudaEventElapsedTime(&TimerAddOne, start, stop);
+
+    
+
+    //cudaMemoryTest();
     HANDLE_ERROR( cudaMemcpy( M, dev_m, N*d * sizeof(int), cudaMemcpyDeviceToHost ) );
     
     printf("memcopy M : done\n");
 
-    printf("gpu time: %f\n", gpu_time );
+    // affiche_Batchtab(M,N,d);
+
+    printf("gpu time: %f\n", gpu_time);
     
-    affiche_Batchtab(M,N,d);
     
     
-   
+    
+//------- liberation memoire ---------------
+
     cudaFree(dev_a);
     cudaFree(dev_b);
     cudaFree(dev_m);
@@ -607,23 +862,51 @@ void test_batchMerge(int d,int N){
     }
 
 
+    free(A);
+    free(B);
+
+    free(lenA);
+    free(lenB);
+    free(M);
+
+    free(A_1d);
+    free(B_1d);
+
+    // cudaEventDestroy(start);
+    // cudaEventDestroy(stop);
+
+
+
 };
 
 
 
 
 void test_PathMerge(){
+
+    printf("----------------------------------------\n");
+    printf("------ begining Path merge sort -------\n");
+    printf("----------------------------------------\n");
+
+//---------initialisation des tableaux-----------------]
+
     int lenA = 10000;
     int lenB = 11245;
     int lenM = lenA + lenB;
 
-    // int* A = (int*)malloc(lenA*sizeof(int));
-    // int* B = (int*)malloc(lenB*sizeof(int));
+    int *A;
+    int *B;
+    int* M;
+
+    A = (int*)malloc(lenA*sizeof(int));
+    B = (int*)malloc(lenB*sizeof(int));
+    M = (int*)malloc(lenM*sizeof(int));
     // int A[lenA] = {1,2,5,6,6,9,11,15,16};
     // int B[lenB] = {4,7,8,10,12,13,14};
-    int A[lenA];
-    int B[lenB];
-    srand (time (NULL));
+    // int A[lenA];
+    // int B[lenB];
+
+//------------remplissage de A et B----------------
 
     for (int i=0 ; i <10000 ;i++){
         A[i] = 2*i;
@@ -632,11 +915,12 @@ void test_PathMerge(){
     for (int i=0 ; i <11245 ;i++){
         B[i] = 2*i +1;
     }
-    //int* M;
-    //M = (int*)malloc(lenM*sizeof(int));
-    int M[lenM]; 
 
 
+    
+    // int M[lenM]; 
+
+//--------allocation des tableaux sur le device---------
     int *dev_a, *dev_b, *dev_m;
 
     HANDLE_ERROR( cudaMalloc( (void**)&dev_a, lenA * sizeof(int) ) );
@@ -648,8 +932,11 @@ void test_PathMerge(){
     HANDLE_ERROR( cudaMemcpy( dev_b, B, lenB * sizeof(int), cudaMemcpyHostToDevice ) );
 
 
+//--------calcul du nombre de threads et nombre de blocs------------
     int blocksize = 1024;
+    int nbBlock = lenM/1024 + 1;
 
+//------- calculs ---------
     //float cpu_time;
     float gpu_time;
 
@@ -657,29 +944,34 @@ void test_PathMerge(){
     timer.start();
 
     printf("begining sorting\n");
-    int nbBlock = lenM/1024 + 1;
+    
     // merge_Small_k<<<1,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m);
     pathBig_k<<<nbBlock,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m, nbBlock);
-    printf("sorted\n");
+    cudaDeviceSynchronize();
 
     timer.add();
     gpu_time = timer.getsum();
 
-    printf("memcopy M\n");
+
     HANDLE_ERROR( cudaMemcpy( M, dev_m, lenM * sizeof(int), cudaMemcpyDeviceToHost ) );
     printf("memcopy M : done\n");
 
-    printf("gpu time: %f\n", gpu_time );
     affiche_tab(M,lenM);
+
+    printf("gpu time: %f\n", gpu_time );
+    
+
+//------- liberation memoire ---------------
 
     cudaFree(dev_a);
     cudaFree(dev_b);
     cudaFree(dev_m);
-    // free(A);
-    // free(B);
-    // free(M);
+    free(A);
+    free(B);
+    free(M);
 
 };
+
 
 
 
@@ -690,7 +982,9 @@ void test_PathMerge(){
 
 
 int main(){
-	test_batchMerge(1024,10);
+	// test_batchMerge_deterministic(4,10000);
+    // test_batchMerge_rand(4, 1000000);
+    test_PathMerge();
 
     return 0;
 }
