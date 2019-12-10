@@ -72,88 +72,73 @@ void affiche_Batchtab(int * Tab, int N, int d)
 
 
 __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
-        // printf("entering thread %d\n",threadIdx.x );
-        // printf("lenA: %d, lenB: %d\n",lenA,lenB );
+
+	__shared__ int s_M[1024];
+    int i = threadIdx.x; 
+    int iter =0;
+
+    int K[2];
+    int P[2];
+ 
+    if (i > lenA){
+
+    	K[0] = i - lenA;
+    	K[1] = lenA;
+
+    	P[0] = lenA;
+    	P[1] = i - lenA; 	
+    }
+    else{
+
+    	K[0] = 0;
+    	K[1] = i;
+
+    	P[0] = i;
+    	P[1] = 0; 
+    }
 
 
-		__shared__ int s_M[1024];
-        int i = threadIdx.x; //+ blockIdx.x * 1024;
-        int iter =0;
 
-        int K[2];
-        int P[2];
-     
-        if (i > lenA){
+    if(i < (lenA+lenB) ){
+        while (true) {
+            iter++;
+            
+        	int offset = abs(K[1] - P[1])/2;
+        	int Q[2];
 
-        	K[0] = i - lenA;
-        	K[1] = lenA;
+        	Q[0] = K[0] + offset;
+        	Q[1] = K[1] - offset;
 
-        	P[0] = lenA;
-        	P[1] = i - lenA; 	
+
+        	if(  (Q[1] >= 0) && (Q[0] <= lenB) && ( (Q[1] == lenA)  || (Q[0] == 0) || (A[Q[1]] > B[Q[0]-1]) ) ){
+        		
+        		if( (Q[0] == lenB) || Q[1] == 0 || A[Q[1]-1] <= B[Q[0]]){
+        			
+        			if(Q[1] < lenA && ( Q[0] == lenB || A[Q[1]] <= B[Q[0]] ) ){
+        				
+        				s_M[i] = A[Q[1]];
+        			}
+        			else{
+
+        				s_M[i] = B[Q[0]];
+        			}
+                    break;
+        		}
+        		else{
+
+        			K[0] = Q[0] + 1;
+        			K[1] = Q[1] - 1;
+        		}
+        	}
+        	else{
+        		P[0] = Q[0] - 1;
+        		P[1] = Q[1] + 1;
+        	}
         }
-        else{
+    }
 
-        	K[0] = 0;
-        	K[1] = i;
-
-        	P[0] = i;
-        	P[1] = 0; 
-        }
-
-        //bool loop = true;
-
-        // printf("thread %d : entering while\n",threadIdx.x);
-
-        if(i < (lenA+lenB) ){
-            while (true) {
-                iter++;
-                
-            	int offset = abs(K[1] - P[1])/2;
-            	int Q[2];
-
-            	Q[0] = K[0] + offset;
-            	Q[1] = K[1] - offset;
-
-                // printf("thread %d : iter %d -- %d - %d;%d\n",threadIdx.x, iter,offset,Q[0],Q[1]);
-
-            	if(  (Q[1] >= 0) && (Q[0] <= lenB) && ( (Q[1] == lenA)  || (Q[0] == 0) || (A[Q[1]] > B[Q[0]-1]) ) ){
-                    //printf("hello\n");
-            		
-            		if( (Q[0] == lenB) || Q[1] == 0 || A[Q[1]-1] <= B[Q[0]]){
-                        // printf("thread %d : iter %d should nreak soon\n",threadIdx.x, iter);
-            			
-            			if(Q[1] < lenA && ( Q[0] == lenB || A[Q[1]] <= B[Q[0]] ) ){
-            				
-            				s_M[i] = A[Q[1]];
-                            //M[i] = A[Q[1]];
-            			}
-            			else{
-
-            				s_M[i] = B[Q[0]];
-                            //M[i] = B[Q[0]];
-            			}
-                        //loop = false;
-                        break;
-            		}
-            		else{
-
-            			K[0] = Q[0] + 1;
-            			K[1] = Q[1] - 1;
-            		}
-            	}
-            	else{
-            		P[0] = Q[0] - 1;
-            		P[1] = Q[1] + 1;
-            	}
-
-            }
-        }
-
-        //printf("thread %d : done\n",threadIdx.x );
-
-        __syncthreads();
-        M[i] = s_M[i];
-        //printf("M[%d] = %d\n",i,M[i] );
+    __syncthreads();
+    M[i] = s_M[i];
 
 }
 
@@ -168,11 +153,14 @@ __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
 /###########################################################################*/
 
 __device__ void mergeBig_k(int *A, int startA,int lenA, int * B, int startB, int lenB, int * M, int startM){
+   
     __shared__ int s_M[1024];
-    int i = threadIdx.x; //+ blockIdx.x * 1024;
+    int i = threadIdx.x; 
     int blockId = blockIdx.x;
     int iter =0;
     int a_top,b_top,a_bottom,index,a_i,b_i;
+
+
     index = i;// + startM;
     lenA -= startA;
     lenB -= startB;
@@ -191,16 +179,9 @@ __device__ void mergeBig_k(int *A, int startA,int lenA, int * B, int startB, int
 
     a_bottom = b_top;      //P[1]
 
-    // if( i == 5)
-    //     printf("block:%d thread:%d : a_top:%d a_bottom:%d b_top:%d\n",blockId,i,a_top,a_bottom,b_top);
 
-
-
-    // printf("thread %d : entering while\n",threadIdx.x);
 
     if( i < (lenA+lenB) ){
-         // if( i== 5 )
-         //    printf("blockId:%d thread:%d - entering while\n",blockId,i);
         while (true) {
             iter++;
 
@@ -208,28 +189,19 @@ __device__ void mergeBig_k(int *A, int startA,int lenA, int * B, int startB, int
 
             a_i = a_top - offset;     //Q[0] = K[0] + offset;
             b_i = b_top + offset;     //Q[1] = K[1] - offset;
-            // if(i == 5)
-            //     printf("thread %d : iter %d -- %d - %d;%d\n",threadIdx.x, iter,offset,a_i,b_i);
 
             if(  (a_i >= 0) && (b_i <= lenB) && ( (a_i == lenA)  || (b_i == 0) || (A[a_i] > B[b_i-1]) ) ){
-                // if(i == 5)
-                //     printf("hello\n");
 
                 if( (b_i == lenB) || a_i == 0 || A[a_i-1] <= B[b_i]){
-                    // if(i == 5)
-                    //     printf("thread %d : iter %d should nreak soon\n",threadIdx.x, iter);
 
                     if(a_i < lenA && ( b_i == lenB || A[a_i] <= B[b_i] ) ){
 
                         s_M[i] = A[a_i];
-                        //M[i] = A[b_i];
                     }
                     else{
 
                         s_M[i] = B[b_i];
-                        //M[i] = B[a_i];
                     }
-                    //loop = false;
                     break;
                 }
                 else{
@@ -241,20 +213,11 @@ __device__ void mergeBig_k(int *A, int startA,int lenA, int * B, int startB, int
                 a_bottom = a_i +1;      //P[1] = b_i + 1;
             }
         }
-        // if( i == 5 )
-        // printf("thread:%d - getting out of while\n",i);
-    
-
-    //printf("thread %d : done\n",threadIdx.x );
 
     __syncthreads();
-    M[startM + i] = s_M[i];
-    //printf("M[%d] = %d\n",i,M[i] );
-    
-
+    M[startM + i] = s_M[i];   
     }
-    // if( i == 5)
-    //     printf("blockId:%d thread:%d - finish\n",blockId,i);
+
 }
 
 
@@ -269,10 +232,8 @@ __global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbbloc
   
     A_start[blockId] = lenA;
     B_start[blockId] = lenB;
-        
-    //for(int i=0 ; i<nbblock ;i++){
-    // if( threadId == 0 and blockId==0)
-    //     printf("block number %d \n",i);
+
+
     index = i * 1024; //indice de l'ement de M par rapport au nlock (initialisation)
 
     if (index > lenA){
@@ -289,8 +250,7 @@ __global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbbloc
     a_bottom = b_top;      //P[1]
 
     //binary search on diag intersections
-    // if( threadId == 0 )
-    //     printf("block:%d - entering while\n",i);
+
     while(true){
 
         int offset = abs(a_top - a_bottom)/2;
@@ -315,15 +275,9 @@ __global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbbloc
             a_bottom = a_i +1;      //P[1] = b_i + 1;
         }
     }
-    // if( threadId == 0 )
-    //     printf("block:%d - getting out of while\n",i);
 
 
     __syncthreads();
-    // if( threadId == 0 )
-    //     printf("block:%d - evverything is fine till now - %d,%d\n",i,A_start[i],B_start[i]);
-    
-
     mergeBig_k(A,A_start[i],lenA,B,B_start[i],lenB,M,i*1024);
     
 }
@@ -342,7 +296,7 @@ __global__ void mergeSmallBatch_k(int *list_A, int* list_lenA, int*list_B, int *
     int gbx     = Qt + blockIdx.x*(blockDim.x/d); // indice i du M_i sur M 
 
 
-    //calcul du nombre de partition traite par block
+//---------calcul du nombre de partition traite par block----------------
     int nbPartPerBlock;
     if(1024/d < N){
         nbPartPerBlock = 1024/d;
@@ -351,11 +305,12 @@ __global__ void mergeSmallBatch_k(int *list_A, int* list_lenA, int*list_B, int *
         nbPartPerBlock = N;
     }
     
-    //calcul nombre block utilise
+//--------------calcul nombre block utilise---------------------------
     int nbblock = (N +nbPartPerBlock-1) / nbPartPerBlock;
     
-    //calcul du nombre de thread utilise par un block
+//-----------calcul du nombre de thread utilise par un block----------
     int threadMax;
+
     if(BlockId == nbblock -1){
         threadMax = (N - (nbPartPerBlock*BlockId) ) *d;
     }
@@ -369,11 +324,7 @@ __global__ void mergeSmallBatch_k(int *list_A, int* list_lenA, int*list_B, int *
     }
 
 
-  
-
-    // printf("block: %d - thread:%d -blockMax=%d - threadMax=%d \n",BlockId, threadIdx.x,nbblock,threadMax );
-
-
+//------------reconstruction des listes locales----------------
     int startA = 0;
     int startB = 0;
 
@@ -389,21 +340,10 @@ __global__ void mergeSmallBatch_k(int *list_A, int* list_lenA, int*list_B, int *
   
     
 
+//--------------- algorithme de tri -------------------
     __shared__ int s_M[1024];
-    int i = threadIdx.x; //+ blockIdx.x * 1024;
+    int i = threadIdx.x; 
     int iter =0;
-
-    // if (i == 0 && BlockId == 0){
-    //     printf("entering thread %d\n",threadIdx.x );
-    //     printf("lenA: %d, lenB: %d\n",lenA,lenB );
-    //     printf("startA: %d, startB: %d\n",startA,startB );
-    //     printf("A[startA]: %d, B[startB]: %d\n",A[0],B[0] );
-    // }  
-    
-
-    // if(BlockId == nbblock -1 ){
-    //     printf("block:%d threadMax on last block=%d\n",BlockId,threadMax);
-    // }
 
 
     int K[2];
@@ -426,15 +366,9 @@ __global__ void mergeSmallBatch_k(int *list_A, int* list_lenA, int*list_B, int *
         P[1] = 0; 
     }
 
-    //bool loop = true;
-
-    // printf("thread %d : entering while\n",threadIdx.x);
 
     if( (BlockId < nbblock) and (i < threadMax) ){
-        // if (i == 21 && BlockId == 0){
-        //     printf("block: %d thread %d : iter %d entering algorithm\n", BlockId,threadIdx.x, iter);
-
-        // } 
+ 
         while (true) {
             iter++;
 
@@ -444,28 +378,17 @@ __global__ void mergeSmallBatch_k(int *list_A, int* list_lenA, int*list_B, int *
             Q[0] = K[0] + offset;
             Q[1] = K[1] - offset;
 
-            // printf("thread %d : iter %d -- %d - %d;%d\n",threadIdx.x, iter,offset,Q[0],Q[1]);
-
             if(  (Q[1] >= 0) && (Q[0] <= lenB) && ( (Q[1] == lenA)  || (Q[0] == 0) || (A[Q[1]] > B[Q[0]-1]) ) ){
-                //printf("hello\n");
 
                 if( (Q[0] == lenB) || Q[1] == 0 || A[Q[1]-1] <= B[Q[0]]){
-                    // if (i == 0 && BlockId == 0){
-                    //     printf("block: %d thread %d : iter %d should break soon\n", BlockId,threadIdx.x, iter);
-                    // } 
 
                     if(Q[1] < lenA && ( Q[0] == lenB || A[Q[1]] <= B[Q[0]] ) ){
-
                         s_M[i] = A[Q[1]];
-                        //M[i] = A[Q[1]];
                     }
                     else{
-
                         s_M[i] = B[Q[0]];
-                        //M[i] = B[Q[0]];
                     }
-                    // printf("block: %d M[%d] = %d\n",BlockId,i,s_M[i]);
-                    //loop = false;
+
                     break;
                 }
                 else{
@@ -482,11 +405,8 @@ __global__ void mergeSmallBatch_k(int *list_A, int* list_lenA, int*list_B, int *
         }
     
 
-    //printf("thread %d : done\n",threadIdx.x );
-
     __syncthreads();
     list_M[gbx*d + tidx] = s_M[i];
-    //printf("M[%d] = %d\n",i,M[i] );
     }
 }
 
@@ -561,10 +481,12 @@ void convert2D_to1D_array(int **A, int*lenA, int N, int *A_1d){
 void test_batchMerge_deterministic(int d,int N){  
     printf("----------------------------------------\n");
     printf("------ begining Batch merge sort -------\n");
+    printf("------- ( deterministic lists ) --------\n");
     printf("----------------------------------------\n");
 
 
 //---------initialisation des tableaux-----------------
+
     int **A;
     int **B;
 
@@ -587,6 +509,7 @@ void test_batchMerge_deterministic(int d,int N){
 
 
 //------------remplissage de A et B----------------
+
     for (int i=0 ;i<N ; i++){
         A[i] = (int*)malloc( (d/2 -1) *sizeof(int));
         B[i] = (int*)malloc( (d/2 +1) *sizeof(int));
@@ -603,22 +526,20 @@ void test_batchMerge_deterministic(int d,int N){
         lenA[i] = d/2 - 1;
         lenB[i] = d/2 + 1;
     }
-
-    
+  
 
 //---------conversion des tableaux 2D em tableaux 1D-------
-    // int A_1d[sizeA];
+
     int * A_1d;
     A_1d = (int*)malloc(sizeA*sizeof(int));
     convert2D_to1D_array(A,lenA,N, A_1d);
-    // int B_1d[sizeB];
+
     int * B_1d;
     B_1d = (int*)malloc(sizeB*sizeof(int));
     convert2D_to1D_array(B,lenB,N, B_1d);
 
     printf("CPU variable allocated and initialized\n");
-  
-  
+    
   
 //--------allocation des tableaux sur le device---------
     int *dev_a, *dev_b, *dev_m;
@@ -648,10 +569,10 @@ void test_batchMerge_deterministic(int d,int N){
     int threadsPerBlock = d * (1024/d);
     int nbBlock = (N*d + threadsPerBlock-1) / threadsPerBlock;
 
-//------- calculs ---------
     printf("N=%d , d=%d , threads= %d , blocs= %d\n",N,d,threadsPerBlock,nbBlock);
 
-    //float cpu_time;
+//------- calculs ---------
+
     float gpu_time;
 
     Timer timer = Timer();
@@ -672,8 +593,6 @@ void test_batchMerge_deterministic(int d,int N){
     affiche_Batchtab(M,N,d);
 
     printf("gpu time: %f\n", gpu_time );
-    
-    
     
     
 //------- liberation memoire ---------------
@@ -705,17 +624,11 @@ void test_batchMerge_deterministic(int d,int N){
 void test_batchMerge_rand(int d,int N){  
     printf("----------------------------------------\n");
     printf("------ begining Batch merge sort -------\n");
+    printf("----------- ( random lists ) -----------\n");
     printf("----------------------------------------\n");
 
 
 //---------initialisation des tableaux-----------------]
-
-    // int *A[N];
-    // int *B[N];
-    
-    // int lenA[N];
-    // int lenB[N];
-    // int M[N*d];
 
     int **A;
     int **B;
@@ -734,15 +647,9 @@ void test_batchMerge_rand(int d,int N){
     M =(int *)malloc( N*d *sizeof(int));
 
 
-
 //------------remplissage de A et B----------------
 
     construct_input(A,lenA,B,lenB,d,N);
-    // printf("Ma liste A\n");
-    // affiche_list(A,lenA,N);
-    // printf("Ma liste B :\n");
-    // affiche_list(B,lenB,N);
-
 
 //---------calcul nombre total d'elements de A et B------------
 
@@ -755,28 +662,17 @@ void test_batchMerge_rand(int d,int N){
     }
 
 
-
-    
-
 //---------conversion des tableaux 2D em tableaux 1D-------
-    // int A_1d[sizeA];
+
     int * A_1d;
     A_1d = (int*)malloc(sizeA*sizeof(int));
     convert2D_to1D_array(A,lenA,N, A_1d);
-    // int B_1d[sizeB];
+
     int * B_1d;
     B_1d = (int*)malloc(sizeB*sizeof(int));
     convert2D_to1D_array(B,lenB,N, B_1d);
 
-
-
     printf("CPU variable allocated and initialized\n");
-
-    // float TimerAddOne;
-    // cudaEvent_t start, stop;
-    // cudaEventCreate(&start);
-    // cudaEventCreate(&stop);
-  
   
   
 //--------allocation des tableaux sur le device---------
@@ -813,14 +709,14 @@ void test_batchMerge_rand(int d,int N){
 
 
 //------- calculs ---------
-    //float cpu_time;
+
     float gpu_time;
 
     Timer timer = Timer();
     timer.start();
 
     printf("begining sorting\n");
-    // cudaEventRecord(start,0);
+
     
     mergeSmallBatch_k<<<nbBlock,threadsPerBlock>>>(dev_a, dev_lenA, dev_b, dev_lenB, dev_m, d, N);
     cudaDeviceSynchronize();
@@ -828,13 +724,7 @@ void test_batchMerge_rand(int d,int N){
     timer.add();
     gpu_time = timer.getsum();
 
-    // cudaEventRecord(stop,0);
-    // cudaEventSynchronize(stop);
-    // cudaEventElapsedTime(&TimerAddOne, start, stop);
-
-    
-
-    //cudaMemoryTest();
+ 
     HANDLE_ERROR( cudaMemcpy( M, dev_m, N*d * sizeof(int), cudaMemcpyDeviceToHost ) );
     
     printf("memcopy M : done\n");
@@ -872,11 +762,6 @@ void test_batchMerge_rand(int d,int N){
     free(A_1d);
     free(B_1d);
 
-    // cudaEventDestroy(start);
-    // cudaEventDestroy(stop);
-
-
-
 };
 
 
@@ -901,10 +786,6 @@ void test_PathMerge(){
     A = (int*)malloc(lenA*sizeof(int));
     B = (int*)malloc(lenB*sizeof(int));
     M = (int*)malloc(lenM*sizeof(int));
-    // int A[lenA] = {1,2,5,6,6,9,11,15,16};
-    // int B[lenB] = {4,7,8,10,12,13,14};
-    // int A[lenA];
-    // int B[lenB];
 
 //------------remplissage de A et B----------------
 
@@ -916,9 +797,6 @@ void test_PathMerge(){
         B[i] = 2*i +1;
     }
 
-
-    
-    // int M[lenM]; 
 
 //--------allocation des tableaux sur le device---------
     int *dev_a, *dev_b, *dev_m;
@@ -937,7 +815,6 @@ void test_PathMerge(){
     int nbBlock = lenM/1024 + 1;
 
 //------- calculs ---------
-    //float cpu_time;
     float gpu_time;
 
     Timer timer = Timer();
@@ -983,8 +860,8 @@ void test_PathMerge(){
 
 int main(){
 	// test_batchMerge_deterministic(4,10000);
-    // test_batchMerge_rand(4, 1000000);
-    test_PathMerge();
+    test_batchMerge_rand(512, 1000000);
+    // test_PathMerge();
 
     return 0;
 }
