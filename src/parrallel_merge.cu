@@ -161,7 +161,7 @@ __device__ void mergeBig_k(int *A, int startA,int lenA, int * B, int startB, int
     int a_top,b_top,a_bottom,index,a_i,b_i;
 
 
-    index = i;// + startM;
+    index = i;
     lenA -= startA;
     lenB -= startB;
     A = &A[startA];
@@ -181,7 +181,7 @@ __device__ void mergeBig_k(int *A, int startA,int lenA, int * B, int startB, int
 
 
 
-    if( i < (lenA+lenB) ){
+    if( i < (lenA+lenB) ){  //les threads non concerner ne travaillent pas -> sinon loop infini
         while (true) {
             iter++;
 
@@ -789,12 +789,23 @@ void test_PathMerge(int d){
 
 //------------remplissage de A et B----------------
 
-    for (int i=0 ; i <lenA ;i++){
-        A[i] = 2*i;
+    // for (int i=0 ; i <lenA ;i++){
+    //     A[i] = 2*i;
+    // }
+
+    // for (int i=0 ; i <lenB ;i++){
+    //     B[i] = 2*i +1;
+    // }
+
+    A[1] = rand()%10;
+    B[1] = rand()%10;
+
+    for (int i=1 ; i <lenA ;i++){
+        A[i] = A[i-1] + rand()%10;
     }
 
-    for (int i=0 ; i <lenB ;i++){
-        B[i] = 2*i +1;
+    for (int i=1 ; i <lenB ;i++){
+        B[i] = B[i-1] + rand()%10;
     }
 
 
@@ -862,10 +873,11 @@ void test_PathMerge(int d){
 
 int main(){
 	// test_batchMerge_deterministic(4,10000);
+    // test_PathMerge(10000);
     
-    for(int i=1 ; i<=10 ; i++){
-        // test_PathMerge(pow(2,i));
-        test_batchMerge_rand(pow(2,i), 1000);
+    for(int i=1 ; i<=30 ; i++){
+        test_PathMerge(pow(2,i));
+        // test_batchMerge_rand(pow(2,i), 1000);
     }
 
     return 0;
