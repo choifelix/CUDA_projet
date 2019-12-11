@@ -6,4 +6,5 @@ void affiche_tab(int * Tab, int len_tab)
 	{
 		printf("%d\t",Tab[i]);
 	}
+    printf("\n");
 }
