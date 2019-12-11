@@ -33,7 +33,7 @@ static void HandleError( cudaError_t err,
 
 int cudaMemoryTest()
 {
-    const unsigned int N = 1000000 * 4;
+    const unsigned int N = 2097151;
     const unsigned int bytes = N * sizeof(int);
     int *h_a = (int*)malloc(bytes);
     int *d_a;
@@ -223,15 +223,14 @@ __device__ void mergeBig_k(int *A, int startA,int lenA, int * B, int startB, int
 
 __global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbblock){
     int threadId = threadIdx.x;
-    int blockId  = blockIdx.x;
     int i        = blockIdx.x;
     int a_top,b_top,a_bottom,index,a_i,b_i;
   
-    int A_start[1024]; // startA pour chaque block
-    int B_start[1024]; // startB pour chaque block
+    int A_start; // startA pour chaque block
+    int B_start; // startB pour chaque block
   
-    A_start[blockId] = lenA;
-    B_start[blockId] = lenB;
+    A_start = lenA;
+    B_start = lenB;
 
 
     index = i * 1024; //indice de l'ement de M par rapport au nlock (initialisation)
@@ -262,8 +261,8 @@ __global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbbloc
             //printf("hello\n");
 
             if( (b_i == lenB) || a_i == 0 || A[a_i-1] <= B[b_i]){
-                A_start[i] = a_i;
-                B_start[i] = b_i;
+                A_start = a_i;
+                B_start = b_i;
                 break;
             }
             else{
@@ -278,7 +277,7 @@ __global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbbloc
 
 
     __syncthreads();
-    mergeBig_k(A,A_start[i],lenA,B,B_start[i],lenB,M,i*1024);
+    mergeBig_k(A,A_start,lenA,B,B_start,lenB,M,i*1024);
     
 }
 
@@ -767,7 +766,7 @@ void test_batchMerge_rand(int d,int N){
 
 
 
-void test_PathMerge(){
+void test_PathMerge(int d){
 
     printf("----------------------------------------\n");
     printf("------ begining Path merge sort -------\n");
@@ -775,9 +774,10 @@ void test_PathMerge(){
 
 //---------initialisation des tableaux-----------------]
 
-    int lenA = 10000;
-    int lenB = 11245;
-    int lenM = lenA + lenB;
+    int lenM = d;
+    int lenA = rand()%(lenM -1) + 1;
+    int lenB = lenM - lenA;
+    
 
     int *A;
     int *B;
@@ -789,11 +789,11 @@ void test_PathMerge(){
 
 //------------remplissage de A et B----------------
 
-    for (int i=0 ; i <10000 ;i++){
+    for (int i=0 ; i <lenA ;i++){
         A[i] = 2*i;
     }
 
-    for (int i=0 ; i <11245 ;i++){
+    for (int i=0 ; i <lenB ;i++){
         B[i] = 2*i +1;
     }
 
@@ -813,6 +813,7 @@ void test_PathMerge(){
 //--------calcul du nombre de threads et nombre de blocs------------
     int blocksize = 1024;
     int nbBlock = lenM/1024 + 1;
+    printf(" d=%d , threads= %d , blocs= %d\n",d,blocksize,nbBlock);
 
 //------- calculs ---------
     float gpu_time;
@@ -825,15 +826,16 @@ void test_PathMerge(){
     // merge_Small_k<<<1,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m);
     pathBig_k<<<nbBlock,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m, nbBlock);
     cudaDeviceSynchronize();
+    printf("synchronized\n");
 
     timer.add();
     gpu_time = timer.getsum();
 
-
-    HANDLE_ERROR( cudaMemcpy( M, dev_m, lenM * sizeof(int), cudaMemcpyDeviceToHost ) );
+    // cudaMemoryTest();
+    HANDLE_ERROR( cudaMemcpy( M, dev_m, lenM* sizeof(int), cudaMemcpyDeviceToHost ) );
     printf("memcopy M : done\n");
 
-    affiche_tab(M,lenM);
+    // affiche_tab(M,lenM);
 
     printf("gpu time: %f\n", gpu_time );
     
@@ -860,8 +862,11 @@ void test_PathMerge(){
 
 int main(){
 	// test_batchMerge_deterministic(4,10000);
-    test_batchMerge_rand(512, 1000000);
-    // test_PathMerge();
+    
+    for(int i=1 ; i<=10 ; i++){
+        // test_PathMerge(pow(2,i));
+        test_batchMerge_rand(pow(2,i), 1000);
+    }
 
     return 0;
 }
