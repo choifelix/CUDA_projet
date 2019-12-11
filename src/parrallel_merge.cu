@@ -73,12 +73,15 @@ void affiche_Batchtab(int * Tab, int N, int d)
 
 __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
 
-	__shared__ int s_M[1024];
+	__shared__ int s_M[1024]; //resultat en local
     int i = threadIdx.x; 
     int iter =0;
 
     int K[2];
     int P[2];
+
+
+    //initialisation des encadrements des valeurs possibles
  
     if (i > lenA){
 
@@ -99,7 +102,8 @@ __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
 
 
 
-    if(i < (lenA+lenB) ){
+    if(i < (lenA+lenB) ){ //condition sur les threads entrant dans la boucle
+        //recherche sur la diagonale
         while (true) {
             iter++;
             
@@ -137,8 +141,8 @@ __global__ void merge_Small_k(int* A, int lenA, int* B, int lenB, int* M){
         }
     }
 
-    __syncthreads();
-    M[i] = s_M[i];
+    __syncthreads();    //synchronisation des threads
+    M[i] = s_M[i];      //ecriture du resultat
 
 }
 
@@ -160,7 +164,7 @@ __device__ void mergeBig_k(int *A, int startA,int lenA, int * B, int startB, int
     int iter =0;
     int a_top,b_top,a_bottom,index,a_i,b_i;
 
-
+    //initialisation des variables pour le tri local
     index = i;
     lenA -= startA;
     lenB -= startB;
@@ -181,7 +185,7 @@ __device__ void mergeBig_k(int *A, int startA,int lenA, int * B, int startB, int
 
 
 
-    if( i < (lenA+lenB) ){  //les threads non concerner ne travaillent pas -> sinon loop infini
+    if( i < (lenA+lenB) ){  //les threads non concerne ne travaillent pas -> sinon loop infini
         while (true) {
             iter++;
 
@@ -221,7 +225,7 @@ __device__ void mergeBig_k(int *A, int startA,int lenA, int * B, int startB, int
 }
 
 
-__global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbblock){
+__global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M){
     int threadId = threadIdx.x;
     int i        = blockIdx.x;
     int a_top,b_top,a_bottom,index,a_i,b_i;
@@ -291,7 +295,7 @@ __global__ void pathBig_k(int* A, int lenA, int* B, int lenB, int* M, int nbbloc
 __global__ void mergeSmallBatch_k(int *list_A, int* list_lenA, int*list_B, int *list_lenB, int*list_M, int d, int N){
     int tidx    = threadIdx.x%d; //thread ne traite pas les elements de M_i d'indice sup a d (n'existe pas)
     int BlockId = blockIdx.x;
-    int Qt      = (threadIdx.x - tidx)/d; //nombre M_i callable dans un bloc
+    int Qt      = (threadIdx.x - tidx)/d; //numero du batch localement au bloc.
     int gbx     = Qt + blockIdx.x*(blockDim.x/d); // indice i du M_i sur M 
 
 
@@ -823,7 +827,7 @@ void test_PathMerge(int d){
 
 //--------calcul du nombre de threads et nombre de blocs------------
     int blocksize = 1024;
-    int nbBlock = lenM/1024 + 1;
+    int nbBlock = (lenM + blocksize -1)/blocksize;
     printf(" d=%d , threads= %d , blocs= %d\n",d,blocksize,nbBlock);
 
 //------- calculs ---------
@@ -835,7 +839,7 @@ void test_PathMerge(int d){
     printf("begining sorting\n");
     
     // merge_Small_k<<<1,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m);
-    pathBig_k<<<nbBlock,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m, nbBlock);
+    pathBig_k<<<nbBlock,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m);
     cudaDeviceSynchronize();
     printf("synchronized\n");
 
@@ -846,7 +850,7 @@ void test_PathMerge(int d){
     HANDLE_ERROR( cudaMemcpy( M, dev_m, lenM* sizeof(int), cudaMemcpyDeviceToHost ) );
     printf("memcopy M : done\n");
 
-    // affiche_tab(M,lenM);
+    affiche_tab(M,lenM);
 
     printf("gpu time: %f\n", gpu_time );
     
@@ -873,10 +877,10 @@ void test_PathMerge(int d){
 
 int main(){
 	// test_batchMerge_deterministic(4,10000);
-    // test_PathMerge(10000);
+    // test_PathMerge(1025);
     
-    for(int i=1 ; i<=30 ; i++){
-        test_PathMerge(pow(2,i));
+    for(int i=1 ; i<30 ; i++){
+        // test_PathMerge(pow(2,i));
         // test_batchMerge_rand(pow(2,i), 1000);
     }
 
