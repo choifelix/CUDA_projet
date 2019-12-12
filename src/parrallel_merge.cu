@@ -827,7 +827,7 @@ void test_PathMerge(int d){
 
 //--------calcul du nombre de threads et nombre de blocs------------
     int blocksize = 1024;
-    int nbBlock = 10* (lenM + blocksize -1)/blocksize;
+    int nbBlock =  (lenM + blocksize -1)/blocksize;
     printf(" d=%d , threads= %d , blocs= %d\n",d,blocksize,nbBlock);
 
 //------- calculs ---------
@@ -880,7 +880,7 @@ int main(){
     test_PathMerge(100000);
     
     for(int i=1 ; i<30 ; i++){
-        // test_PathMerge(pow(2,i));
+        test_PathMerge(pow(2,i));
         // test_batchMerge_rand(pow(2,i), 1000);
     }
 
