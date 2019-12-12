@@ -877,7 +877,7 @@ void test_PathMerge(int d){
 
 int main(){
 	// test_batchMerge_deterministic(4,10000);
-    // test_PathMerge(1025);
+    test_PathMerge(1025);
     
     for(int i=1 ; i<30 ; i++){
         // test_PathMerge(pow(2,i));
