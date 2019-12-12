@@ -413,6 +413,138 @@ __global__ void mergeSmallBatch_k(int *list_A, int* list_lenA, int*list_B, int *
     }
 }
 
+/*##########################################################################
+                        sort any list
+
+/###########################################################################*/
+
+void Pathmerge(int*A,int lenA,int*B,int lenB, int*M, int lenM){
+    //--------allocation des tableaux sur le device---------
+            int *dev_a, *dev_b, *dev_m;
+
+            HANDLE_ERROR( cudaMalloc( (void**)&dev_a, lenA * sizeof(int) ) );
+            HANDLE_ERROR( cudaMalloc( (void**)&dev_b, lenB * sizeof(int) ) );
+            HANDLE_ERROR( cudaMalloc( (void**)&dev_m, lenM * sizeof(int) ) );
+
+
+            HANDLE_ERROR( cudaMemcpy( dev_a, A, lenA * sizeof(int), cudaMemcpyHostToDevice ) );
+            HANDLE_ERROR( cudaMemcpy( dev_b, B, lenB * sizeof(int), cudaMemcpyHostToDevice ) );
+
+
+        //--------calcul du nombre de threads et nombre de blocs------------
+            int blocksize = 1024;
+            int nbBlock =  (sizeM + blocksize -1)/blocksize;
+            printf(" d=%d , threads= %d , blocs= %d\n",d,blocksize,nbBlock);
+
+        //------- calculs ---------
+            float gpu_time;
+
+            Timer timer = Timer();
+            timer.start();
+
+            // printf("begining sorting\n");
+            
+            // merge_Small_k<<<1,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m);
+            pathBig_k<<<nbBlock,blocksize>>>(dev_a,lenA,dev_b,lenB,dev_m);
+            cudaDeviceSynchronize();
+            // printf("synchronized\n");
+
+            timer.add();
+            gpu_time = timer.getsum();
+
+            // cudaMemoryTest();
+            HANDLE_ERROR( cudaMemcpy( M[i], dev_m, lenM* sizeof(int), cudaMemcpyDeviceToHost ) );
+            // printf("memcopy M : done\n");
+
+            affiche_tab(M,lenM);
+
+            // printf("gpu time: %f\n", gpu_time );
+            
+
+        //------- liberation memoire ---------------
+
+            cudaFree(dev_a);
+            cudaFree(dev_b);
+            cudaFree(dev_m);
+
+}
+
+
+
+// void sort_anyM(int d){
+//     int *rand_list;
+//     rand_list =(int *)malloc( d *sizeof(int));
+
+//     int **M;
+//     M = (int **)malloc( d *sizeof(int*));
+
+
+//     for(int i=0 ; i<d ; i++){
+//         rand_list[i] = rand();
+//     }
+
+//     int **M;
+//     M = (int **)malloc( d *sizeof(int*));
+//     int sizeM = 1;
+//     int lenM  = d;
+
+//     while(true){
+//         int **M_temp;
+//         int **A;
+//         int **B;
+
+//         A =(int **)malloc( lenM/2 *sizeof(int*));
+//         B =(int **)malloc( lenM/2 *sizeof(int*));
+
+
+
+//         //------- construction A et B -> separation de M en 2-----------
+//         for(int i=0 ; i<lenM/2 ; i++){
+
+
+//             A[i] = (int *)malloc( sizeM *sizeof(int));
+//             B[i] = (int *)malloc( sizeM *sizeof(int));
+
+//             for(int j=0 ; j<sizeM ; j++){
+//                 A[i][j] = M[2*i][j];
+//                 B[i][j] = M[2*i + 1][j];
+//             }
+//         }
+
+//         M_temp = (int **)malloc( (lenM/2 ) *sizeof(int));
+
+//         for(int i=0 ; i< lenM/2 ; i++){
+//             Pathmerge(A[i],sizeM,B[i],sizeM,M_temp[i],sizeM*2);
+//         }
+
+
+        
+//         for(int i =0 ; i<lenM ; i++){
+//             free(M[i]);
+//         }
+//         free(M);
+        
+//         // M = (int **)malloc(lenM/2 * sizeof(int*));
+//         // for(int i =0 ; i<lenM/2 ; i++){
+//         //     M[i]=(int*)malloc(sizeM*2 *sizeof(int));
+//         // }
+
+//         M = M_temp;
+
+
+
+
+//         for(int i=0 ; i<sizeM ; i++){
+//             free(A[i]);
+//             free(B[i]);
+//         }
+
+//         free(A);
+//         free(B);
+//     }
+
+// }
+
 
 
 
@@ -801,8 +933,8 @@ void test_PathMerge(int d){
     //     B[i] = 2*i +1;
     // }
 
-    A[1] = rand()%10;
-    B[1] = rand()%10;
+    A[0] = rand()%10;
+    B[0] = rand()%10;
 
     for (int i=1 ; i <lenA ;i++){
         A[i] = A[i-1] + rand()%10;
